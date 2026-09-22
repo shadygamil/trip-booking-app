@@ -1,6 +1,28 @@
 import streamlit as st
 import pandas as pd
 import os
+import re
+from PIL import Image
+import pytesseract
+
+# رقم الموبايل اللي هيستلم عليه التحويلات (إنستا باي / فودافون كاش)
+TARGET_PHONE = "01225427767"
+
+def normalize_digits(text):
+    """يحول أي أرقام عربية لإنجليزية ويشيل أي حاجة مش رقم"""
+    arabic_to_english = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+    text = text.translate(arabic_to_english)
+    return re.sub(r"\D", "", text)
+
+def check_receipt_for_phone(image_file, target_phone):
+    """يحاول يقرا الرقم من صورة الإيصال ويتأكد إنه موجود فيها"""
+    try:
+        image = Image.open(image_file)
+        raw_text = pytesseract.image_to_string(image, lang="eng")
+        digits_only = normalize_digits(raw_text)
+        return target_phone in digits_only
+    except Exception:
+        return False
 
 # إعدادات الصفحة
 st.set_page_config(page_title="حجز مقاعد أسرة الأنبا كراس", page_icon="🚌", layout="centered")
@@ -86,7 +108,22 @@ else:
     st.warning("⚠️ برجاء اختيار مقعد من خريطة الأتوبيس بالأعلى.")
 
 st.markdown("---")
+st.info(f"💳 حوّل المبلغ على الرقم: **{TARGET_PHONE}** (إنستا باي أو فودافون كاش)، وبعدين ارفع صورة الإيصال هنا.")
 uploaded_file = st.file_uploader("رفع صورة إيصال التحويل (فودافون كاش / إنستا باي)", type=["png", "jpg", "jpeg"])
+
+receipt_verified = False
+
+if uploaded_file is not None:
+    with st.spinner("جاري التحقق من الإيصال..."):
+        receipt_verified = check_receipt_for_phone(uploaded_file, TARGET_PHONE)
+    uploaded_file.seek(0)  # نرجع مؤشر الملف لأول حاجة عشان نقدر نستخدمه تاني
+
+    if receipt_verified:
+        st.success(f"✅ تم التحقق: الرقم {TARGET_PHONE} ظاهر في الإيصال.")
+    else:
+        st.error("❌ لم يتم العثور على الرقم بوضوح في الصورة. برجاء التأكد إن الصورة واضحة وغير مشخبط عليها، وصوّرها تاني وارفعها من جديد.")
+
+st.markdown("---")
 
 if st.button("تأكيد الحجز"):
     if not name or not phone:
@@ -95,6 +132,8 @@ if st.button("تأكيد الحجز"):
         st.error("برجاء اختيار مقعد من الأتوبيس أولاً.")
     elif uploaded_file is None:
         st.error("برجاء رفع صورة إيصال التحويل.")
+    elif not receipt_verified:
+        st.error("لم يتم التحقق من الإيصال. برجاء رفع صورة أوضح تظهر فيها رقم التحويل بشكل جيد.")
     else:
         # حفظ الحجز الجديد
         new_data = pd.DataFrame([[name, phone, selected_seat]], columns=["الاسم رباعي", "رقم الموبايل", "رقم الكرسي"])
