@@ -25,9 +25,9 @@ def check_receipt_for_phone(image_file, target_phone):
         return False
 
 def is_valid_name(name):
-    """لازم يكون اسم رباعي: كلمتين على الأقل، حروف بس (عربي أو إنجليزي)"""
+    """لازم يكون اسم رباعي: أربع كلمات على الأقل، حروف بس (عربي أو إنجليزي)"""
     parts = name.strip().split()
-    if len(parts) < 2:
+    if len(parts) < 4:
         return False
     for part in parts:
         if not re.fullmatch(r"[A-Za-z\u0600-\u06FF]+", part):
@@ -152,7 +152,7 @@ if st.button("تأكيد الحجز"):
     if not name or not phone:
         st.error("برجاء إدخال الاسم ورقم الموبايل.")
     elif not is_valid_name(name):
-        st.error("برجاء إدخال اسم رباعي حقيقي (حروف فقط، كلمتين على الأقل).")
+        st.error("برجاء إدخال اسم رباعي كامل (أربع كلمات على الأقل، حروف فقط).")
     elif not is_valid_phone(phone):
         st.error("برجاء إدخال رقم موبايل مصري صحيح (11 رقم يبدأ بـ 010 أو 011 أو 012 أو 015).")
     elif selected_seat is None:
@@ -169,3 +169,26 @@ if st.button("تأكيد الحجز"):
         st.session_state['selected_seat'] = None
         st.session_state['form_counter'] += 1  # يصفّر الاسم والرقم والإيصال المرفوع
         st.rerun()
+
+# ==================== صفحة الإدارة ====================
+ADMIN_PASSWORD = "anbakaras"
+
+st.markdown("---")
+with st.expander("🔐 لوحة الإدارة (للمسؤول فقط)"):
+    admin_pass_input = st.text_input("كلمة السر", type="password", key="admin_pass")
+    if admin_pass_input == ADMIN_PASSWORD:
+        st.success("تم الدخول بنجاح ✅")
+        df_all = pd.read_csv(DB_FILE)
+
+        st.subheader(f"📋 كل الحجوزات ({len(df_all)} حجز)")
+        st.dataframe(df_all, use_container_width=True)
+
+        csv_data = df_all.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            label="⬇️ تنزيل ملف الحجوزات (Excel/CSV)",
+            data=csv_data,
+            file_name="bookings_export.csv",
+            mime="text/csv"
+        )
+    elif admin_pass_input != "":
+        st.error("كلمة السر غير صحيحة.")
