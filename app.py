@@ -56,6 +56,12 @@ if not os.path.exists(DB_FILE):
 df_bookings = pd.read_csv(DB_FILE)
 booked_seats = df_bookings["رقم الكرسي"].tolist()
 
+# تهيئة حالة الجلسة (لازم قبل أي استخدام ليها)
+if 'selected_seat' not in st.session_state:
+    st.session_state['selected_seat'] = None
+if 'form_counter' not in st.session_state:
+    st.session_state['form_counter'] = 0
+
 # إدخال بيانات المستخدم
 st.subheader("📝 بيانات الحجز")
 name = st.text_input("الاسم رباعي", key=f"name_{st.session_state['form_counter']}")
@@ -78,10 +84,6 @@ st.markdown("---")
 st.info("🟢 مقعد متاح  |  🔴 مقعد محجوز")
 
 total_seats = 49  # إجمالي عدد مقاعد الأتوبيس
-if 'selected_seat' not in st.session_state:
-    st.session_state['selected_seat'] = None
-if 'form_counter' not in st.session_state:
-    st.session_state['form_counter'] = 0
 
 # الصفوف العادية (من 1 إلى 44: كل صف 4 كراسي: كرسيين، ممر في النص، كرسيين)
 for row in range(0, 44, 4):
