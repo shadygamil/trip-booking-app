@@ -23,33 +23,67 @@ export function AdminDashboard() {
   }, [])
 
   const loadStats = async () => {
-    const { data: bookings } = await supabase.from('booking_summary').select('*')
-    const { data: seats } = await supabase.from('seats').select('*')
-    const { data: pendingPayments } = await supabase
-      .from('payments')
-      .select('*')
-      .in('verification_status', ['pending', 'needs_review'])
+    // Fetch raw data from all three tables
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('id, total_price, booking_status')
+      .eq('booking_status', 'active')
 
-    if (bookings && seats && pendingPayments !== null) {
-      const bookedSeats = bookings.filter((b: { booking_status: string }) => b.booking_status === 'active').length
-      const totalApproved = bookings
-        .filter((b: { booking_status: string }) => b.booking_status === 'active')
-        .reduce((sum: number, b: { total_paid: number }) => sum + (b.total_paid || 0), 0)
-      const totalRemaining = bookings
-        .filter((b: { booking_status: string }) => b.booking_status === 'active')
-        .reduce((sum: number, b: { remaining_amount: number }) => sum + (b.remaining_amount || 0), 0)
-      const fullyPaid = bookings.filter((b: { payment_status: string }) => b.payment_status === 'مكتمل الدفع').length
-      const partiallyPaid = bookings.filter((b: { payment_status: string }) => b.payment_status === 'دفع جزئي').length
+    const { data: seats } = await supabase.from('seats').select('*')
+
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('booking_id, verified_amount, verification_status')
+
+    if (bookings !== null && seats && payments !== null) {
+      const activeBookings = bookings || []
+      const allPayments = payments || []
+
+      // Calculate approved total from raw payments (only 'verified' status)
+      const totalApproved = allPayments
+        .filter((p) => p.verification_status === 'verified')
+        .reduce((sum, p) => sum + (p.verified_amount || 0), 0)
+
+      // Calculate per-booking approved totals
+      const bookingPaidMap = new Map<string, number>()
+      for (const p of allPayments) {
+        if (p.verification_status === 'verified') {
+          const current = bookingPaidMap.get(p.booking_id) || 0
+          bookingPaidMap.set(p.booking_id, current + (p.verified_amount || 0))
+        }
+      }
+
+      // Calculate remaining per booking and totals
+      let totalRemaining = 0
+      let fullyPaid = 0
+      let partiallyPaid = 0
+
+      for (const b of activeBookings) {
+        const paid = bookingPaidMap.get(b.id) || 0
+        const remaining = Math.max(0, b.total_price - paid)
+        totalRemaining += remaining
+
+        if (paid >= b.total_price) {
+          fullyPaid++
+        } else if (paid > 0) {
+          partiallyPaid++
+        }
+      }
+
+      // Count pending/needs_review payments
+      const pendingReview = allPayments.filter(
+        (p) => p.verification_status === 'pending' || p.verification_status === 'needs_review'
+      ).length
 
       setStats({
-        totalBookings: bookings.length,
-        bookedSeats,
+        totalBookings: activeBookings.length,
+        bookedSeats: activeBookings.length,
         totalSeats: seats.length,
         totalApproved,
         totalRemaining,
         fullyPaid,
         partiallyPaid,
-        pendingReview: (pendingPayments || []).length,
+        pendingReview,
       })
     }
     setLoading(false)

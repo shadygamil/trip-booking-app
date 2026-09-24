@@ -156,12 +156,18 @@ export function ContinuePayment() {
         p_target_phone_found: ocrResult?.targetPhoneFound || false,
         p_ocr_amount: ocrResult?.ocrAmount ?? null,
         p_ocr_result: ocrResult?.ocrResult || '',
+        p_phone_verification_status: ocrResult?.phoneVerificationStatus || 'not_found',
       })
 
       if (rpcError) throw new Error(rpcError.message)
       if (!result || !result.success) throw new Error(result?.error || 'فشل إضافة الدفعة')
 
-      setMessage({ type: 'success', text: 'تم إرسال الدفعة بنجاح وهي الآن في انتظار المراجعة.' })
+      const statusMsg = result.payment_status === 'verified'
+        ? 'تم إرسال الدفعة وتم التحقق منها بنجاح.'
+        : result.payment_status === 'rejected'
+        ? 'تم رفض الدفعة - رقم التحويل غير صحيح. برجاء التواصل مع المسؤول.'
+        : 'تم إرسال الدفعة بنجاح وهي الآن في انتظار المراجعة.'
+      setMessage({ type: 'success', text: statusMsg })
 
       // Reset form
       setPaymentAmount(0)
@@ -346,8 +352,10 @@ export function ContinuePayment() {
 
               {ocrResult && !ocrProcessing && (
                 <div className={`rounded-xl p-3 border text-sm ${
-                  ocrResult.targetPhoneFound
+                  ocrResult.phoneVerificationStatus === 'found'
                     ? 'bg-success-50 border-success-200 text-success-700'
+                    : ocrResult.phoneVerificationStatus === 'different'
+                    ? 'bg-error-50 border-error-200 text-error-700'
                     : 'bg-warning-50 border-warning-200 text-warning-700'
                 }`}>
                   <p className="font-semibold">{ocrResult.ocrResult}</p>

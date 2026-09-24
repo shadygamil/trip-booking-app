@@ -117,14 +117,13 @@ export function NewBooking() {
         p_target_phone_found: ocrResult?.targetPhoneFound || false,
         p_ocr_amount: ocrResult?.ocrAmount ?? null,
         p_ocr_result: ocrResult?.ocrResult || '',
+        p_phone_verification_status: ocrResult?.phoneVerificationStatus || 'not_found',
       })
 
       if (rpcError) throw new Error(rpcError.message)
       if (!result || !result.success) throw new Error(result?.error || 'فشل إنشاء الحجز')
 
-      const totalPaid = result.success && ocrResult?.targetPhoneFound && ocrResult?.ocrAmount === paymentAmount
-        ? paymentAmount
-        : 0
+      const totalPaid = result.payment_status === 'verified' ? paymentAmount : 0
 
       setSuccess({
         bookingCode: result.booking_code,
@@ -331,8 +330,10 @@ export function NewBooking() {
 
         {ocrResult && !ocrProcessing && (
           <div className={`rounded-xl p-4 border ${
-            ocrResult.targetPhoneFound
+            ocrResult.phoneVerificationStatus === 'found'
               ? 'bg-success-50 border-success-200 text-success-700'
+              : ocrResult.phoneVerificationStatus === 'different'
+              ? 'bg-error-50 border-error-200 text-error-700'
               : 'bg-warning-50 border-warning-200 text-warning-700'
           }`}>
             <p className="font-semibold mb-1">نتيجة فحص الإيصال:</p>
