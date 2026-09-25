@@ -31,6 +31,7 @@ export function NewBooking() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState<SuccessState | null>(null)
   const [duplicateAlert, setDuplicateAlert] = useState<string | null>(null)
+  const [nameValid, setNameValid] = useState<boolean | null>(null)
 
   const loadData = useCallback(async () => {
     const { data: sData } = await supabase.from('app_settings').select('*').eq('id', 1).maybeSingle()
@@ -46,29 +47,40 @@ export function NewBooking() {
 
   const remaining = settings ? settings.total_price - paymentAmount : 0
 
-  // Check for duplicate booking by phone
-  const checkDuplicatePhone = async (phoneValue: string) => {
+  // Check for duplicate booking by name — if found, block submission
+  const checkDuplicateName = async (nameValue: string) => {
     setDuplicateAlert(null)
-    if (!phoneValue.trim() || !isValidPhone(phoneValue)) return
+    const trimmed = nameValue.trim()
+    if (!trimmed || !isValidName(trimmed)) return
 
     const { data } = await supabase
       .from('booking_summary')
       .select('*')
-      .eq('phone', phoneValue.trim())
       .eq('booking_status', 'active')
+      .ilike('full_name', trimmed)
       .maybeSingle()
 
     if (data) {
-      const summary = data as { booking_code: string; seat_number: number; remaining_amount: number }
+      const summary = data as { seat_number: number; remaining_amount: number }
       setDuplicateAlert(
-        `لقد حجزت المقعد رقم ${summary.seat_number} (${summary.booking_code})، وعليك استكمال المبلغ المتبقي وقدره ${summary.remaining_amount} جنيه.`
+        `لقد حجزت مسبقاً برقم ${summary.seat_number}، ومتبقي عليك ${summary.remaining_amount} جنيه`
       )
     }
   }
 
   const handleNameChange = (value: string) => {
+    // Block non-Arabic characters instantly
     if (isArabicOnly(value) || value === '') {
       setName(value)
+      setDuplicateAlert(null)
+      // Real-time validation: check if name is valid (4 Arabic parts)
+      setNameValid(isValidName(value))
+    }
+  }
+
+  const handleNameBlur = () => {
+    if (name.trim() && isValidName(name)) {
+      checkDuplicateName(name)
     }
   }
 
@@ -96,6 +108,10 @@ export function NewBooking() {
     }
     if (!isValidName(name)) {
       setError('برجاء إدخال اسم رباعي كامل (أربع كلمات على الأقل، حروف عربية فقط).')
+      return
+    }
+    if (duplicateAlert) {
+      setError(duplicateAlert)
       return
     }
     if (!phone.trim()) {
@@ -280,19 +296,26 @@ export function NewBooking() {
             type="text"
             value={name}
             onChange={(e) => handleNameChange(e.target.value)}
-            className="input-field"
+            onBlur={handleNameBlur}
+            className={`input-field ${
+              nameValid === false ? 'border-error-300 bg-error-50' :
+              nameValid === true ? 'border-success-300 bg-success-50' : ''
+            }`}
             placeholder="مثال: أحمد محمد علي حسن"
           />
+          {nameValid === false && name.length > 0 && (
+            <p className="text-xs text-error-600 mt-1">يجب إدخال أربع كلمات عربية على الأقل — لا يُسمح بحروف إنجليزية أو رموز</p>
+          )}
+          {nameValid === true && !duplicateAlert && (
+            <p className="text-xs text-success-600 mt-1">✅ الاسم صحيح</p>
+          )}
         </div>
         <div>
           <label className="label">رقم الموبايل</label>
           <input
             type="tel"
             value={phone}
-            onChange={(e) => {
-              setPhone(e.target.value)
-              if (e.target.value.length === 11) checkDuplicatePhone(e.target.value)
-            }}
+            onChange={(e) => setPhone(e.target.value)}
             className="input-field"
             placeholder="01XXXXXXXXX"
             dir="ltr"
@@ -407,8 +430,8 @@ export function NewBooking() {
 
       <button
         onClick={handleSubmit}
-        disabled={submitting}
-        className="btn-primary w-full text-lg"
+        disabled={submitting || !!duplicateAlert || nameValid === false}
+        className="btn-primary w-full text-lg disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {submitting ? (
           <span className="flex items-center justify-center gap-2">
