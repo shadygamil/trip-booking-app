@@ -111,7 +111,7 @@ export function AdminSettings() {
         </div>
 
         <div>
-          <label className="label">رقم التحويل (إنستا باي / فودافون كاش)</label>
+          <label className="label">رقم التحويل (إنستا باي / Instapay)</label>
           <input
             type="text"
             value={transferPhone}

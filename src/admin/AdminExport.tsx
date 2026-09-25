@@ -28,9 +28,9 @@ export function AdminExport() {
       'رقم الموبايل': b.phone,
       'رقم الكرسي': b.seat_number,
       'إجمالي الحجز': b.total_price,
-      'المدفوع': b.total_paid,
+      'المدفوع المعتمد': b.total_paid,
       'المتبقي': b.remaining_amount,
-      'حالة الدفع': b.payment_status,
+      'الحالة': b.remaining_amount <= 0 ? 'مكتمل الدفع' : b.total_paid > 0 ? 'دفع جزئي' : 'غير مدفوع',
       'تاريخ الحجز': formatDate(b.created_at),
     }))
     downloadCsv('bookings_export.csv', rows)
@@ -39,15 +39,25 @@ export function AdminExport() {
   const exportPayments = () => {
     const rows = payments.map((p) => {
       const booking = bookings.find((b) => b.id === p.booking_id)
+      const statusLabel =
+        p.verification_status === 'verified' ? 'تم التحقق' :
+        p.verification_status === 'rejected' ? 'مرفوض' :
+        p.verification_status === 'needs_review' ? 'يحتاج مراجعة' :
+        'في انتظار المراجعة'
+      const amountMatch =
+        p.ocr_amount !== null && p.entered_amount !== null
+          ? Math.abs(p.ocr_amount - p.entered_amount) < 0.01 ? 'مطابق' : 'غير مطابق'
+          : ''
       return {
         'رقم الحجز': booking?.booking_code || '',
         'الاسم': booking?.full_name || '',
         'رقم الدفعة': p.payment_number,
-        'المبلغ المدخل': p.entered_amount,
-        'المبلغ المعتمد': p.verified_amount || '',
-        'حالة المراجعة': p.verification_status,
-        'رقم التحويل موجود': p.target_phone_found ? 'نعم' : 'لا',
+        'المبلغ المدفوع يدوياً': p.entered_amount,
         'مبلغ OCR': p.ocr_amount || '',
+        'مطابقة المبلغ': amountMatch,
+        'المبلغ المعتمد': p.verified_amount || '',
+        'الحالة': statusLabel,
+        'رقم التحويل موجود': p.target_phone_found ? 'نعم' : 'لا',
         'نتيجة OCR': p.ocr_result || '',
         'التاريخ': formatDate(p.created_at),
         'راجعه': p.reviewed_by || '',

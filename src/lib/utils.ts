@@ -20,9 +20,14 @@ export function isValidName(name: string): boolean {
   const parts = name.trim().split(/\s+/)
   if (parts.length < 4) return false
   for (const part of parts) {
-    if (!/^[\u0600-\u06FFa-zA-Z]+$/.test(part)) return false
+    if (!/^[\u0600-\u06FF]+$/.test(part)) return false
   }
   return true
+}
+
+export function isArabicOnly(text: string): boolean {
+  // Allow Arabic letters, spaces, and nothing else
+  return /^[\u0600-\u06FF\s]*$/.test(text)
 }
 
 export function isValidPhone(phone: string): boolean {

@@ -28,12 +28,41 @@ function normalizePhone(text: string): string {
 }
 
 function extractAmount(text: string): number | null {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+
+  // Instapay receipts: amount appears near the top, followed by "EGP"
+  // Try lines from top first, looking for "X EGP" or "X.XX EGP"
+  for (const line of lines.slice(0, 15)) {
+    const m = line.match(/(\d+(?:\.\d{1,2})?)\s*EGP/i)
+    if (m) {
+      const val = parseFloat(m[1])
+      if (!isNaN(val) && val > 0) return val
+    }
+  }
+
+  // Try patterns with جنيه
+  for (const line of lines.slice(0, 15)) {
+    const m = line.match(/(\d+(?:\.\d{1,2})?)\s*جنيه/i)
+    if (m) {
+      const val = parseFloat(m[1])
+      if (!isNaN(val) && val > 0) return val
+    }
+  }
+
+  // Try "مبلغ" or "amount" patterns
+  for (const line of lines) {
+    const m = line.match(/(?:مبلغ|amount|value|قيمة|transfer|تحويل)\s*[:\s]*(\d+(?:\.\d{1,2})?)/i)
+    if (m) {
+      const val = parseFloat(m[1])
+      if (!isNaN(val) && val > 0) return val
+    }
+  }
+
+  // Fallback: look for a 2-3 digit number near EGP anywhere
   const patterns = [
-    /(\d+(?:\.\d{1,2})?)\s*(?:جنيه|egp|ج\.م)/i,
-    /(?:مبلغ|amount|value|قيمة|transfer|تحويل)\s*[:\s]*(\d+(?:\.\d{1,2})?)/i,
     /(\d{2,3}(?:\.\d{1,2})?)\s*(?:egp|جنيه)/i,
     /(\d{2,3}(?:\.\d{1,2})?)/,
-    /(\d+(?:\.\d{1,2})?)/,
+  /(\d+(?:\.\d{1,2})?)/,
   ]
 
   for (const p of patterns) {
@@ -49,11 +78,9 @@ function extractAmount(text: string): number | null {
 function extractAllPhoneNumbers(text: string): string[] {
   const normalized = normalizePhone(text)
   const phones: string[] = []
-  // Match sequences of 10-13 digits (Egyptian phone numbers with/without country code)
   const matches = normalized.match(/\d{10,13}/g)
   if (matches) {
     for (const m of matches) {
-      // Normalize: strip leading country code 20 if present
       let phone = m
       if (phone.startsWith('20') && phone.length === 13) {
         phone = '0' + phone.slice(2)
@@ -65,6 +92,25 @@ function extractAllPhoneNumbers(text: string): string[] {
     }
   }
   return phones
+}
+
+function checkToField(text: string, targetPhone: string): boolean {
+  const lines = text.split('\n').map((l) => l.trim())
+  const targetClean = normalizePhone(targetPhone)
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^(to|إلى|الي|مستلم|المستلم|receiver|مستقبل)\s*[:.]?\s*/i.test(line)) {
+      const normalized = normalizePhone(line)
+      if (normalized.includes(targetClean)) return true
+    }
+    // Also check line after "To" label
+    if (/^(to|إلى|الي|مستلم|المستلم|receiver|مستقبل)\s*[:.]?\s*$/i.test(line) && i + 1 < lines.length) {
+      const normalized = normalizePhone(lines[i + 1])
+      if (normalized.includes(targetClean)) return true
+    }
+  }
+  return false
 }
 
 export async function processReceiptOcr(
@@ -89,13 +135,11 @@ export async function processReceiptOcr(
       }
     }
 
-    // Extract all phone-like numbers from the receipt
     const foundPhones = extractAllPhoneNumbers(rawText)
-
-    // Check if the target phone is present
     const targetFound = foundPhones.some((p) => p === targetPhoneClean)
+    const toFieldMatch = checkToField(rawText, targetPhone)
+    const targetConfirmed = targetFound || toFieldMatch
 
-    // Check if any other phone number is present (but not the target)
     const otherPhonesFound = foundPhones.filter((p) => p !== targetPhoneClean && p.length >= 10)
 
     const ocrAmount = extractAmount(rawText)
@@ -103,7 +147,7 @@ export async function processReceiptOcr(
     let phoneVerificationStatus: 'found' | 'different' | 'not_found' | 'unclear'
     let ocrResult: string
 
-    if (targetFound) {
+    if (targetConfirmed) {
       phoneVerificationStatus = 'found'
       if (ocrAmount !== null) {
         ocrResult = 'رقم التحويل موجود + المبلغ المقروء: ' + ocrAmount + ' جنيه'
@@ -111,20 +155,17 @@ export async function processReceiptOcr(
         ocrResult = 'رقم التحويل موجود + لم يتم قراءة المبلغ'
       }
     } else if (otherPhonesFound.length > 0) {
-      // Found phone numbers but none match the target
       phoneVerificationStatus = 'different'
       ocrResult = 'رقم التحويل غير موجود - تم العثور على رقم آخر مختلف'
     } else if (foundPhones.length === 0 && rawText.replace(/\s/g, '').length < 20) {
-      // Very little text extracted — unclear
       phoneVerificationStatus = 'unclear'
       ocrResult = 'لا يمكن قراءة الإيصال بوضوح'
     } else {
-      // No phone numbers found at all in the text
       phoneVerificationStatus = 'not_found'
       ocrResult = 'رقم التحويل غير موجود في الإيصال'
     }
 
-    return { rawText, targetPhoneFound: targetFound, ocrAmount, ocrResult, phoneVerificationStatus }
+    return { rawText, targetPhoneFound: targetConfirmed, ocrAmount, ocrResult, phoneVerificationStatus }
   } catch {
     return {
       rawText: '',

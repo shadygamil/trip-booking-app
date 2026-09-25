@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { AppSettings } from '../lib/types'
 import { SeatMap } from '../components/SeatMap'
 import { processReceiptOcr, OcrResult } from '../lib/ocr'
-import { isValidName, isValidPhone, formatCurrency } from '../lib/utils'
+import { isValidName, isValidPhone, formatCurrency, isArabicOnly } from '../lib/utils'
 
 interface SuccessState {
   bookingCode: string
@@ -16,6 +16,7 @@ interface SuccessState {
 }
 
 export function NewBooking() {
+  const topRef = useRef<HTMLDivElement>(null)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [bookedSeats, setBookedSeats] = useState<number[]>([])
   const [name, setName] = useState('')
@@ -29,6 +30,7 @@ export function NewBooking() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState<SuccessState | null>(null)
+  const [duplicateAlert, setDuplicateAlert] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     const { data: sData } = await supabase.from('app_settings').select('*').eq('id', 1).maybeSingle()
@@ -44,6 +46,32 @@ export function NewBooking() {
 
   const remaining = settings ? settings.total_price - paymentAmount : 0
 
+  // Check for duplicate booking by phone
+  const checkDuplicatePhone = async (phoneValue: string) => {
+    setDuplicateAlert(null)
+    if (!phoneValue.trim() || !isValidPhone(phoneValue)) return
+
+    const { data } = await supabase
+      .from('booking_summary')
+      .select('*')
+      .eq('phone', phoneValue.trim())
+      .eq('booking_status', 'active')
+      .maybeSingle()
+
+    if (data) {
+      const summary = data as { booking_code: string; seat_number: number; remaining_amount: number }
+      setDuplicateAlert(
+        `لقد حجزت المقعد رقم ${summary.seat_number} (${summary.booking_code})، وعليك استكمال المبلغ المتبقي وقدره ${summary.remaining_amount} جنيه.`
+      )
+    }
+  }
+
+  const handleNameChange = (value: string) => {
+    if (isArabicOnly(value) || value === '') {
+      setName(value)
+    }
+  }
+
   const handleReceiptChange = async (file: File | null) => {
     if (!file) return
     setReceiptFile(file)
@@ -56,6 +84,9 @@ export function NewBooking() {
     setOcrProcessing(false)
   }
 
+  const amountMatch = ocrResult && ocrResult.ocrAmount !== null && paymentAmount > 0
+    const amountsMatch = amountMatch && Math.abs(ocrResult!.ocrAmount! - paymentAmount) < 0.01
+
   const handleSubmit = async () => {
     setError('')
 
@@ -64,7 +95,7 @@ export function NewBooking() {
       return
     }
     if (!isValidName(name)) {
-      setError('برجاء إدخال اسم رباعي كامل (أربع كلمات على الأقل، حروف فقط).')
+      setError('برجاء إدخال اسم رباعي كامل (أربع كلمات على الأقل، حروف عربية فقط).')
       return
     }
     if (!phone.trim()) {
@@ -99,14 +130,12 @@ export function NewBooking() {
     setSubmitting(true)
 
     try {
-      // Upload receipt to storage
       const fileExt = receiptFile.name.split('.').pop()
       const fileName = `receipts/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
       const { error: uploadError } = await supabase.storage.from('receipts').upload(fileName, receiptFile)
 
       if (uploadError) throw new Error('فشل رفع صورة الإيصال. برجاء المحاولة مرة أخرى.')
 
-      // Call create_booking RPC
       const { data: result, error: rpcError } = await supabase.rpc('create_booking', {
         p_full_name: name.trim(),
         p_phone: phone.trim(),
@@ -134,8 +163,22 @@ export function NewBooking() {
         totalPrice: settings?.total_price || 250,
       })
 
+      // Full reset of all form fields
+      setName('')
+      setPhone('')
+      setSelectedSeat(null)
+      setPaymentAmount(0)
+      setReceiptFile(null)
+      setReceiptPreview(null)
+      setOcrResult(null)
+      setDuplicateAlert(null)
+      setError('')
+
       // Refresh booked seats
       await loadData()
+
+      // Scroll to top
+      topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'حدث خطأ غير متوقع')
     } finally {
@@ -145,9 +188,9 @@ export function NewBooking() {
 
   if (success) {
     return (
-      <div className="max-w-2xl mx-auto animate-fade-in">
+      <div className="max-w-2xl mx-auto animate-fade-in" ref={topRef}>
         <div className="card text-center py-8">
-          <div className="text-6xl mb-4">✅</div>
+          <div className="text-7xl mb-4">✅</div>
           <h2 className="text-2xl font-bold text-success-700 mb-6">تم إنشاء الحجز بنجاح</h2>
 
           <div className="bg-slate-50 rounded-xl p-6 mb-6 text-right space-y-3">
@@ -197,13 +240,19 @@ export function NewBooking() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto animate-fade-in">
+    <div className="max-w-2xl mx-auto animate-fade-in" ref={topRef}>
       <h2 className="text-2xl font-bold text-primary-800 mb-2 text-center">حجز جديد</h2>
       <p className="text-slate-500 text-center mb-6">أدخل بياناتك واختر مقعدك</p>
 
       {error && (
         <div className="bg-error-50 border border-error-200 text-error-700 rounded-xl p-4 mb-4 animate-fade-in">
           {error}
+        </div>
+      )}
+
+      {duplicateAlert && (
+        <div className="bg-warning-50 border border-warning-200 text-warning-700 rounded-xl p-4 mb-4 animate-fade-in">
+          ⚠️ {duplicateAlert}
         </div>
       )}
 
@@ -226,11 +275,11 @@ export function NewBooking() {
       {/* Form fields */}
       <div className="card mb-6 space-y-4">
         <div>
-          <label className="label">الاسم رباعي</label>
+          <label className="label">الاسم رباعي (بالحروف العربية فقط)</label>
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => handleNameChange(e.target.value)}
             className="input-field"
             placeholder="مثال: أحمد محمد علي حسن"
           />
@@ -240,7 +289,10 @@ export function NewBooking() {
           <input
             type="tel"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => {
+              setPhone(e.target.value)
+              if (e.target.value.length === 11) checkDuplicatePhone(e.target.value)
+            }}
             className="input-field"
             placeholder="01XXXXXXXXX"
             dir="ltr"
@@ -270,10 +322,9 @@ export function NewBooking() {
         {settings && (
           <div className="bg-primary-50 rounded-xl p-4 text-center">
             <p className="text-sm text-slate-600 mb-1">
-              حوّل المبلغ على الرقم:{' '}
+              حوّل المبلغ على الرقم عبر إنستا باي (Instapay):{' '}
               <span className="font-bold text-primary-700" dir="ltr">{settings.transfer_phone}</span>
             </p>
-            <p className="text-xs text-slate-500">(إنستا باي أو فودافون كاش)</p>
           </div>
         )}
 
@@ -306,7 +357,7 @@ export function NewBooking() {
         )}
 
         <div>
-          <label className="label">رفع صورة إيصال التحويل</label>
+          <label className="label">رفع صورة إيصال التحويل (إنستا باي)</label>
           <input
             type="file"
             accept="image/png,image/jpeg,image/jpg"
@@ -339,7 +390,16 @@ export function NewBooking() {
             <p className="font-semibold mb-1">نتيجة فحص الإيصال:</p>
             <p className="text-sm">{ocrResult.ocrResult}</p>
             {ocrResult.ocrAmount !== null && (
-              <p className="text-sm mt-1">المبلغ المقروء: {ocrResult.ocrAmount} جنيه</p>
+              <p className="text-sm mt-1">المبلغ المقروء من الإيصال: {ocrResult.ocrAmount} جنيه</p>
+            )}
+            {amountMatch && (
+              <div className={`mt-2 p-2 rounded-lg text-sm font-semibold ${
+                amountsMatch
+                  ? 'bg-success-100 text-success-700'
+                  : 'bg-error-100 text-error-700'
+              }`}>
+                {amountsMatch ? '✅ مطابق — المبلغ اليدوي يطابق مبلغ الإيصال' : '❌ غير مطابق — المبلغ اليدوي يختلف عن مبلغ الإيصال'}
+              </div>
             )}
           </div>
         )}

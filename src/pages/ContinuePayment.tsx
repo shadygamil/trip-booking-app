@@ -309,7 +309,7 @@ export function ContinuePayment() {
 
               {settings && (
                 <div className="bg-primary-50 rounded-xl p-3 text-center text-sm">
-                  حوّل المبلغ على الرقم:{' '}
+                  حوّل المبلغ على الرقم عبر إنستا باي (Instapay):{' '}
                   <span className="font-bold text-primary-700" dir="ltr">{settings.transfer_phone}</span>
                 </div>
               )}
@@ -359,7 +359,18 @@ export function ContinuePayment() {
                     : 'bg-warning-50 border-warning-200 text-warning-700'
                 }`}>
                   <p className="font-semibold">{ocrResult.ocrResult}</p>
-                  {ocrResult.ocrAmount !== null && <p>المبلغ المقروء: {ocrResult.ocrAmount} جنيه</p>}
+                  {ocrResult.ocrAmount !== null && <p>المبلغ المقروء من الإيصال: {ocrResult.ocrAmount} جنيه</p>}
+                  {ocrResult.ocrAmount !== null && paymentAmount > 0 && (
+                    <div className={`mt-2 p-2 rounded-lg text-sm font-semibold ${
+                      Math.abs(ocrResult.ocrAmount - paymentAmount) < 0.01
+                        ? 'bg-success-100 text-success-700'
+                        : 'bg-error-100 text-error-700'
+                    }`}>
+                      {Math.abs(ocrResult.ocrAmount - paymentAmount) < 0.01
+                        ? '✅ مطابق — المبلغ اليدوي يطابق مبلغ الإيصال'
+                        : '❌ غير مطابق — المبلغ اليدوي يختلف عن مبلغ الإيصال'}
+                    </div>
+                  )}
                 </div>
               )}
 
